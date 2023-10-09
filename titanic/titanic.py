@@ -82,6 +82,7 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.impute import KNNImputer
 from sklearn.metrics import accuracy_score, roc_auc_score 
 from xgboost import XGBClassifier
+from sklearn.svm import SVC
 
 warnings.filterwarnings("ignore")
 
@@ -485,6 +486,74 @@ def XGBoost(X_train, X_valid, y_train, y_valid, seed_value):
 
     return model
 
+def SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value):
+    # because X_train had nan values i used this part for complete values missings
+    imputer = KNNImputer(n_neighbors=2, weights="uniform")
+    X_train_mod = imputer.fit_transform(X_train)
+    X_valid_mod = imputer.fit_transform(X_valid)
+
+    # define the model to use and training the model
+    clf = SVC(random_state=seed_value)
+    clf.fit(X_train_mod, y_train)
+
+    # find the score of model based in validation data
+    acc_free = clf.score(X_valid_mod, y_valid)
+    print("SVC Free Accuracy: {0:.2f}%\n".format(acc_free*100))
+
+    # Tunning the Tree
+
+    # define grid 
+    grid = { 
+        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+        'degree': range(3, 6),
+        'random_state': [seed_value]
+    }
+
+    best_acc_tunned = 0
+    best_scoring = ''
+    best_cv = 0
+    for s in ['roc_auc', 'accuracy']:
+        for i in range(3,6):
+            grid_search = GridSearchCV(clf,
+                                       grid, 
+                                       cv=i,
+                                       scoring=s)
+            
+            grid_search.fit(X_train_mod, y_train)
+
+            # best params from the grid
+            best_params = grid_search.best_params_
+
+            # training the tunning tree
+            clf_tunned = SVC(**best_params)
+            clf_tunned.fit(X_train_mod, y_train)
+
+            # find the score of tunned model based in validation data
+            acc_tunned = clf_tunned.score(X_valid_mod, y_valid)
+
+            if acc_tunned > best_acc_tunned:
+                best_acc_tunned = acc_tunned
+                best_params_all = best_params
+                best_scoring = s
+                best_cv = i
+
+    # show the best values
+    print('Best Params for SVC')
+    for param, value in best_params_all.items():
+        print(f"{param}: {value}")
+    print(f'cv: {best_cv}')
+    print(f'scoring: {best_scoring}')
+
+    # training the tunning tree
+    clf_tunned = SVC(**best_params_all)
+    clf_tunned.fit(X_train_mod, y_train)
+
+    # find the score of tunned model based in validation data
+    acc_tunned = clf_tunned.score(X_valid_mod, y_valid)
+    print("SVC Tunned Accuracy: {0:.2f}%\n".format(acc_tunned*100))
+
+    return clf_tunned
+
 def Ensemble_Voting(zip_models, X_train, y_train):
     # Making the final model using voting classifier
     model_ensemble = VotingClassifier(
@@ -526,7 +595,12 @@ def result(min_max_col, std_scal_col, model):
     X_test[min_max_col] = MinMaxScaler().fit_transform(X_test[min_max_col])
     X_test[std_scal_col] = StandardScaler().fit_transform(X_test[std_scal_col])
     X_test = X_test.to_numpy()
-    y_pred1 = model.predict(X_test)
+
+    # because X_test had nan values i used this part for complete values missings
+    imputer = KNNImputer(n_neighbors=2, weights="uniform")
+    X_test_mod = imputer.fit_transform(X_test)
+
+    y_pred1 = model.predict(X_test_mod)
     
     test_pred = test[['PassengerId']].copy()
     test_pred['Survived'] = y_pred1
@@ -580,22 +654,25 @@ def main():
     model_decision_tree = Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)    
     model_random_forest = Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)
     model_xgboost = XGBoost(X_train, X_valid, y_train, y_valid, seed_value)
+    model_svc = SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value)
 
-    names_list = ['lr', 'rf', 'xgb']
-    model_list = [model_logistic_regression, model_random_forest, model_xgboost]
+    names_list = ['lr', 'rf', 'xgb', 'svc']
+    model_list = [model_logistic_regression, model_random_forest, model_xgboost, model_svc]
     model_voting = Ensemble_Voting(zip(names_list, model_list), X_train, y_train)
     
     prediction_scoring(model_voting, X_valid, y_valid, cv_value=5)
     
-    result(min_max_col, std_scal_col, model_decision_tree)
+    result(min_max_col, std_scal_col, model_svc)
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
 
 ################################################################################################################################################################################
 ################################################################################################################################################################################
 
 # # Results
+
+################################################################################################################################################################################
 
 # Logistic Regression Free Accuracy: 87.74%
 
@@ -606,6 +683,8 @@ if __name__ == "__main__":
 # cv: 2
 # scoring: roc_auc
 # Logistic Regression Tunned Accuracy: 87.74%
+
+################################################################################################################################################################################
 
 # Decision Tree Free Accuracy: 83.23%
 
@@ -619,6 +698,8 @@ if __name__ == "__main__":
 # scoring: roc_auc
 # Decision Tree Tunned Accuracy: 89.68%
 
+################################################################################################################################################################################
+
 # Random Forest Free Accuracy: 80.00%
 
 # Best Params for Decision Tree Classifier
@@ -630,6 +711,8 @@ if __name__ == "__main__":
 # cv: 4
 # scoring: roc_auc
 # Random Forest Tunned Accuracy: 89.03%
+
+################################################################################################################################################################################
 
 # XGBoost Free Accuracy: 83.87%
 
@@ -644,6 +727,20 @@ if __name__ == "__main__":
 # scoring: roc_auc
 # Random Forest Tunned Accuracy: 83.23%
 
+################################################################################################################################################################################
+
+# SVC Free Accuracy: 87.10%
+
+# Best Params for SVC
+# degree: 3
+# kernel: poly
+# random_state: 1703
+# cv: 3
+# scoring: accuracy
+# SVC Tunned Accuracy: 88.39%
+
+################################################################################################################################################################################
+
 # Ensemble Voting Accuracy: 87.74%
 # Ensemble Voting Cross Validation Accuracy: 89.68%
 
@@ -653,3 +750,4 @@ if __name__ == "__main__":
 # # Final Result
 
 # Decision Tree Tunned: 77.751%
+# SVC Tunned Accuracy: 75.358%
