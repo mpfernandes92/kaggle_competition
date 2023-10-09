@@ -531,7 +531,7 @@ def result(min_max_col, std_scal_col, model):
     test_pred = test[['PassengerId']].copy()
     test_pred['Survived'] = y_pred1
     
-    test_pred.to_csv('result.csv')
+    test_pred.to_csv('result.csv', index=False)
     print('Result finished')
 
 def main():
@@ -646,3 +646,10 @@ if __name__ == "__main__":
 
 # Ensemble Voting Accuracy: 87.74%
 # Ensemble Voting Cross Validation Accuracy: 89.68%
+
+################################################################################################################################################################################
+################################################################################################################################################################################
+
+# # Final Result
+
+# Decision Tree Tunned: 77.751%
