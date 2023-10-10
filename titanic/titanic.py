@@ -173,7 +173,6 @@ def drop_outliers(df1, df2, columns_outliers):
     idx_outlier = []
     
     for col in columns_outliers:  
-        col
         # 1st quartile (25%)
         q25 = np.percentile(df_1[col], 25)
         # 3rd quartile (75%)
