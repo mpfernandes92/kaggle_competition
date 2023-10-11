@@ -74,7 +74,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, MinMaxScaler, StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_predict
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_predict, KFold
 from sklearn.linear_model import LogisticRegression
 from sklearn import tree
 from sklearn.tree import DecisionTreeClassifier
@@ -84,12 +84,38 @@ from sklearn.metrics import confusion_matrix, accuracy_score, roc_auc_score
 from xgboost import XGBClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from hyperopt import hp
 
 warnings.filterwarnings("ignore")
 
 pd.set_option('display.max_columns', None)
 
 ################################################################################################################################################################################
+
+def data_info(train, test, df):
+    print('\n' + '-'*50)
+
+    print('Info about train:')
+    print(train.info())
+    
+    print('\nInfo about test:')
+    print(test.info())
+
+    print('\nInfo about train + test:')
+    print(df.info())
+
+    print('\n'+ '-'*50 + '\n')
+
+    print('\nNull values by columns in train:')
+    print(train.isnull().sum())
+    
+    print('\nNull values by columns in test:')
+    print(test.isnull().sum())
+
+    print('\nNull values by columns in complexity:')
+    print(df.isnull().sum())
+
+    print('-'*50 + '\n')
 
 def data_visualization(df):
     sns.countplot(df, x='Pclass', hue='Survived').tick_params(bottom=False)
@@ -216,6 +242,23 @@ def segregate_category(df1, col_category):
     df_1.columns = name_col
     return df_1
 
+# Doesnt used because i didnt see best results
+# def segregate_folders(model, X_train, X_valid, y_train, y_valid, seed_value, splits_n=15):
+    
+#     nkf = KFold(n_splits=splits_n, shuffle=True, random_state=seed_value)
+
+#     acc_score = 0
+#     mf = model
+#     for train_idx, test_idx in nkf.split(X_train, y_train):
+#         m = model
+#         m.fit(X_train.iloc[train_idx], y_train.iloc[train_idx])
+#         m_acc_score = accuracy_score(m.predict(X_valid), y_valid)
+#         if m_acc_score > acc_score:
+#             acc_score = m_acc_score
+#             mf = m
+    
+#     return mf
+
 def Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value):
 
     # define the model to use and training the model
@@ -226,6 +269,7 @@ def Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value):
     acc_free = clf.score(X_valid, y_valid)
     print("Logistic Regression Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf.predict(X_valid))}\n')
+    print('-'*50)
 
     # Tunning model
 
@@ -266,7 +310,7 @@ def Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value):
                 best_cv = i
 
     # show the best values
-    print('Best Params for Logistic Regression')
+    print('\nBest Params for Logistic Regression')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -278,7 +322,7 @@ def Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value):
 
     # find the score of tunned model based in validation data
     acc_tunned = clf_tunned.score(X_valid, y_valid)
-    print("Logistic Regression Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nLogistic Regression Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf_tunned.predict(X_valid))}\n')
     return clf_tunned
 
@@ -312,6 +356,7 @@ def Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
     acc_free = clf.score(X_valid, y_valid)
     print("Decision Tree Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf.predict(X_valid))}\n')
+    print('-'*50)
 
     # see the tree
     # tree.plot_tree(clf)
@@ -356,7 +401,7 @@ def Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
                 best_cv = i
 
     # show the best values
-    print('Best Params for Decision Tree Classifier')
+    print('\nBest Params for Decision Tree Classifier')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -368,7 +413,7 @@ def Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
 
     # find the score of tunned model based in validation data
     acc_tunned = clf_tunned.score(X_valid, y_valid)
-    print("Decision Tree Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nDecision Tree Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf_tunned.predict(X_valid))}\n')
 
     # see the tree
@@ -386,6 +431,7 @@ def Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
     acc_free = clf.score(X_valid, y_valid)
     print("Random Forest Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf.predict(X_valid))}\n')
+    print('-'*50)
 
     # Tunning the Tree
 
@@ -428,7 +474,7 @@ def Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
                 best_cv = i
 
     # show the best values
-    print('Best Params for Random Forest Classifier')
+    print('\nBest Params for Random Forest Classifier')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -440,9 +486,8 @@ def Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value):
 
     # find the score of tunned model based in validation data
     acc_tunned = clf_tunned.score(X_valid, y_valid)
-    print("Random Forest Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nRandom Forest Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf_tunned.predict(X_valid))}\n')
-
     return clf_tunned
 
 def XGBoost(X_train, X_valid, y_train, y_valid, seed_value):
@@ -455,6 +500,7 @@ def XGBoost(X_train, X_valid, y_train, y_valid, seed_value):
     acc_free = model.score(X_valid, y_valid)
     print("XGBoost Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, model.predict(X_valid))}\n')
+    print('-'*50)
 
     # Tunning Model
 
@@ -506,7 +552,7 @@ def XGBoost(X_train, X_valid, y_train, y_valid, seed_value):
                 best_cv = i
 
     # show the best values
-    print('Best Params for XGBoost Classifier')
+    print('\nBest Params for XGBoost Classifier')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -518,9 +564,8 @@ def XGBoost(X_train, X_valid, y_train, y_valid, seed_value):
 
     # find the score of tunned model based in validation data
     acc_tunned = model_tunned.score(X_valid, y_valid)
-    print("XGBoost Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nXGBoost Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, model_tunned.predict(X_valid))}\n')
-
     return model
 
 def SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value):
@@ -532,6 +577,7 @@ def SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value):
     acc_free = clf.score(X_valid, y_valid)
     print("SVC Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf.predict(X_valid))}\n')
+    print('-'*50)
 
     # Tunning the Tree
 
@@ -571,7 +617,7 @@ def SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value):
                 best_cv = i
 
     # show the best values
-    print('Best Params for SVC')
+    print('\nBest Params for SVC')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -583,9 +629,8 @@ def SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value):
 
     # find the score of tunned model based in validation data
     acc_tunned = clf_tunned.score(X_valid, y_valid)
-    print("SVC Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nSVC Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, clf_tunned.predict(X_valid))}\n')
-
     return clf_tunned
 
 def KNN(X_train, X_valid, y_train, y_valid):
@@ -597,6 +642,7 @@ def KNN(X_train, X_valid, y_train, y_valid):
     acc_free = neigh.score(X_valid, y_valid)
     print("KNN Free Accuracy: {0:.2f}%".format(acc_free*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, neigh.predict(X_valid))}\n')
+    print('-'*50)
 
     # Tunning the Model
 
@@ -637,7 +683,7 @@ def KNN(X_train, X_valid, y_train, y_valid):
                 best_cv = i
 
     # show the best values
-    print('Best Params for KNN')
+    print('\nBest Params for KNN')
     for param, value in best_params_all.items():
         print(f"{param}: {value}")
     print(f'cv: {best_cv}')
@@ -649,9 +695,8 @@ def KNN(X_train, X_valid, y_train, y_valid):
 
     # find the score of tunned model based in validation data
     acc_tunned = neigh_tunned.score(X_valid, y_valid)
-    print("KNN Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print("\nKNN Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
     print(f'Confusion Matrix:\n{confusion_matrix(y_valid, neigh_tunned.predict(X_valid))}\n')
-
     return neigh_tunned
 
 def Ensemble_Voting(zip_models, X_train, y_train):
@@ -708,17 +753,14 @@ def main():
 
     df = pd.concat([train, test])
 
-    # print(df.head())
+    print(df.head())
+    print('\n' + '-'*50)
+    # Categorical: Survived, Sex, and Embarked
+    # Ordinal: Pclass
+    # Continous: Age, Fare
+    # Discrete: SibSp, Parch
 
-    print('\nNull values by columns in train:')
-    print(train.isnull().sum())
-    
-    print('\nNull values by columns in test:')
-    print(test.isnull().sum())
-
-    print('\nNull values by columns in complexity:')
-    print(df.isnull().sum())
-    print()
+    data_info(train, test, df)
 
     # working with missing values
 
@@ -743,7 +785,7 @@ def main():
     # for understand the relation of title
     for t in df.Title.unique():
         print(f'{t}: {df[df.Title == t].shape[0]}, {df[df.Title == t].Sex.unique()}')
-    print()
+    print('\n' + '-'*50 + '\n')
     df.loc[(df.Title == 'Mme') | (df.Title == 'Ms'), 'Title'] = 'Mrs'
     df.loc[(df.Title != 'Mr') & (df.Title != 'Mrs') & (df.Title != 'Miss'), 'Title'] = 'Others'
 
@@ -805,59 +847,25 @@ def main():
     X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, random_state=seed_value)
 
     model_logistic_regression = Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value)
+    print('#'*50 + '\n')
     ccp_alfa = cost_pruning_tree(X_train, X_valid, y_train, y_valid, seed_value)
     model_decision_tree = Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)    
+    print('#'*50 + '\n')
     model_random_forest = Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)
-
-    # fill np.nan values with technique KNN Imputer
-    X_train = fill_null_values(X_train, category_columns)
-
-    # separate the category columns in multiples columns
-    X_train = segregate_category(X_train, category_columns)
-
-    # defined the test dataset
-    X_test = X_train.drop(train.index.to_list(), axis = 0)
-
-    # remove outliers from columns
-    # as seen in the data visualization stage, the 'Age' and 'Fare' columns 
-    # presented outliers that could harm the model
-    X_train, y_train = drop_outliers(X_train, y_train, ['Age', 'Fare'])
-
-    # identify the test index
-    idx_test = y_train[pd.isnull(y_train.Survived)].index
-
-    # as only the distribution of 'Age' and 'Fare' is 'Gaussian", they will be scaled by StandardScaler
-    # the other columns will be applied to MinMaxScaler method
-    min_max_col = ['Pclass', 'SibSp', 'Parch']
-    std_scal_col = ['Age', 'Fare']
-    # invert the values of Pclass because the 1 are better than 3
-    X_train['Pclass'] = X_train['Pclass'].rank(method='dense', ascending=False)
-    X_train[min_max_col] = MinMaxScaler().fit_transform(X_train[min_max_col])
-    X_train[std_scal_col] = StandardScaler().fit_transform(X_train[std_scal_col])
-
-    # remove the index of test for training model
-    X_train = X_train.drop(idx_test.to_list(), axis = 0) 
-    y_train = y_train.drop(idx_test.to_list(), axis = 0) 
-    
-    # ML models works better with numpy array
-    X_train, y_train = X_train.to_numpy(), y_train.to_numpy()
-
-    # create a dataset for validation the train
-    X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, random_state=seed_value)
-
-    model_logistic_regression = Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value)
-    ccp_alfa = cost_pruning_tree(X_train, X_valid, y_train, y_valid, seed_value)
-    model_decision_tree = Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)    
-    model_random_forest = Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)
+    print('#'*50 + '\n')
     model_xgboost = XGBoost(X_train, X_valid, y_train, y_valid, seed_value)
+    print('#'*50 + '\n')
     model_svc = SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value)
+    print('#'*50 + '\n')
     model_knn = KNN(X_train, X_valid, y_train, y_valid)
+    print('#'*50 + '\n')
 
     names_list = ['lr', 'rf', 'xgb', 'svc', 'knn']
     model_list = [model_logistic_regression, model_random_forest, model_xgboost, model_svc, model_knn]
     model_voting = Ensemble_Voting(zip(names_list, model_list), X_train, y_train)
     
     prediction_scoring(model_voting, X_valid, y_valid, cv_value=5)
+    print('-'*50)
     
     result(X_test, model_voting)
 
@@ -877,6 +885,8 @@ def main():
 # Confusion Matrix:
 # [[91 11]
 #  [16 31]]
+
+# --------------------------------------------------
 
 # Best Params for Logistic Regression
 # max_iter: 20
@@ -898,6 +908,8 @@ def main():
 # [[94  8]
 #  [17 30]]
 
+# --------------------------------------------------
+
 # Best Params for Decision Tree Classifier
 # ccp_alpha: 0.0025422005287777097
 # criterion: gini
@@ -918,6 +930,8 @@ def main():
 # Confusion Matrix:
 # [[97  5]
 #  [17 30]]
+
+# --------------------------------------------------
 
 # Best Params for Random Forest Classifier
 # ccp_alpha: 0
@@ -941,6 +955,8 @@ def main():
 # [[93  9]
 #  [17 30]]
 
+# --------------------------------------------------
+
 # Best Params for XGBoost Classifier
 # eval_metric: logloss
 # learning_rate: 0.2
@@ -962,6 +978,8 @@ def main():
 # [[89 13]
 #  [15 32]]
 
+# --------------------------------------------------
+
 # Best Params for SVC
 # degree: 3
 # kernel: linear
@@ -980,6 +998,8 @@ def main():
 # Confusion Matrix:
 # [[92 10]
 #  [20 27]]
+
+# --------------------------------------------------
 
 # Best Params for KNN
 # algorithm: ball_tree
