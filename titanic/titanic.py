@@ -72,19 +72,21 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+# from scipy.stats import uniform
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, MinMaxScaler, StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_predict, KFold
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_predict
 from sklearn.linear_model import LogisticRegression
 from sklearn import tree
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.impute import KNNImputer
-from sklearn.metrics import confusion_matrix, accuracy_score, roc_auc_score 
+from sklearn.metrics import confusion_matrix, accuracy_score, roc_auc_score,\
+                            precision_recall_curve, roc_curve, f1_score,\
+                            precision_score, recall_score
 from xgboost import XGBClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from hyperopt import hp
 
 warnings.filterwarnings("ignore")
 
@@ -232,7 +234,7 @@ def segregate_category(df1, col_category):
     df_1 = onehotencoder.fit_transform(df1)
 
     # return to dataframe
-    df_1 = pd.DataFrame(df_1.toarray(), columns=onehotencoder.get_feature_names_out(), index=df1.index)
+    df_1 = pd.DataFrame(df_1, columns=onehotencoder.get_feature_names_out(), index=df1.index)
     name_col = []
     for col in df_1.columns:
         if col.startswith('OneHot'):
@@ -709,6 +711,72 @@ def Ensemble_Voting(zip_models, X_train, y_train):
     model_ensemble.fit(X_train, y_train)
     return model_ensemble
 
+def model_already_calculed(X_train, y_train, ccp_alfa, seed_value):
+
+    # LogisticRegression
+    grid = { 
+        'penalty':'l2',
+        'solver': 'lbfgs',
+        'max_iter': 20,
+        'random_state': seed_value
+    }
+    lr = LogisticRegression(**grid)
+    lr.fit(X_train, y_train)
+
+    # DecisionTreeClassifier
+    grid = { 
+        'criterion': 'gini',
+        'max_features': None,
+        'max_depth': None,
+        'random_state': seed_value,
+        'ccp_alpha': ccp_alfa
+    }
+    dtc = DecisionTreeClassifier(**grid)
+    dtc.fit(X_train, y_train)    
+
+    # RandomForestClassifier
+    grid = { 
+        'n_estimators': 50,
+        'criterion': 'gini',
+        'max_features': 'sqrt',
+        'max_depth': None,
+        'random_state': seed_value,
+        'ccp_alpha': 0
+    }
+    rfc = RandomForestClassifier(**grid)
+    rfc.fit(X_train, y_train)
+
+    # XGBClassifier 
+    grid = { 
+        'eval_metric': 'logloss',
+        'n_estimators': 200,
+        'learning_rate': 0.2,
+        'max_depth': 4,
+        'random_state': seed_value
+    }
+    xgb = XGBClassifier(**grid)
+    xgb.fit(X_train, y_train)
+
+    # SVC
+    grid = { 
+        'kernel': 'linear',
+        'degree': 3,
+        'random_state': seed_value
+    }
+    svc = SVC(**grid)
+    svc.fit(X_train, y_train)
+
+    grid = { 
+        'n_neighbors': 7,
+        'weights': 'distance',
+        'algorithm': 'ball_tree',
+        'leaf_size': 28
+    }
+    knn = KNeighborsClassifier(**grid)
+    knn.fit(X_train, y_train)
+
+    return lr, dtc, rfc, xgb, svc, knn
+
 def prediction_scoring(model, X_valid, y_valid, cv_value=5):
 
     # Predition
@@ -723,15 +791,26 @@ def prediction_scoring(model, X_valid, y_valid, cv_value=5):
     roc_score_cv = roc_auc_score(y_valid, y_pred_cv)
     print("With Cross Validation: \nAccuracy: {0:.2f}%\nROC Score: {1:.2f}%\n".format(acc_score_cv*100, roc_score_cv*100))
 
+def choose_model(list_model, X_valid, y_valid):
+        
+    model_s = 0
+    for m in list_model:
+        m_s = m.score(X_valid, y_valid)
+        if m_s > model_s:
+            model_s = m_s
+            model = m
+
+    return model
+
 def result(X_test, model):
     X_test_np = X_test.to_numpy()
 
     y_pred1 = model.predict(X_test_np)
     
     X_test['Survived'] = y_pred1
-    X_test = X_test[['Survived']].copy()
+    X_test = X_test[['Survived']].reset_index().copy()
     
-    X_test.to_csv('result.csv')
+    X_test.to_csv('result.csv', index=False)
     print('Result finished')
 
 def main():
@@ -805,10 +884,10 @@ def main():
     # separate the columns labels and targets
     # the PassengerId, Name and Ticket columns were ignored because 
     # they were interpreted as not necessary for training the model
-    X_train = df.drop(columns=['Survived', 'Name', 'Ticket', 'Cabin']).copy()
+    X_train = df.drop(columns=['Survived', 'Name', 'Ticket', 'Cabin', 'Surname']).copy()
     y_train = df[['Survived']].copy()
 
-    category_columns = ['Sex', 'Embarked', 'Deck', 'Surname', 'Title']
+    category_columns = ['Sex', 'Embarked', 'Deck', 'Title']
 
     # fill np.nan values with technique KNN Imputer
     X_train = fill_null_values(X_train, category_columns)
@@ -833,9 +912,13 @@ def main():
     std_scal_col = ['Age', 'Fare']
     # invert the values of Pclass because the 1 are better than 3
     X_train['Pclass'] = X_train['Pclass'].rank(method='dense', ascending=False)
-    X_train[min_max_col] = MinMaxScaler().fit_transform(X_train[min_max_col])
-    X_train[std_scal_col] = StandardScaler().fit_transform(X_train[std_scal_col])
-
+    mms = MinMaxScaler()
+    ss = StandardScaler()
+    X_train[min_max_col] = mms.fit_transform(X_train[min_max_col])
+    X_train[std_scal_col] = ss.fit_transform(X_train[std_scal_col])
+    X_test[min_max_col] = mms.transform(X_test[min_max_col])
+    X_test[std_scal_col] = ss.transform(X_test[std_scal_col])
+    
     # remove the index of test for training model
     X_train = X_train.drop(idx_test.to_list(), axis = 0) 
     y_train = y_train.drop(idx_test.to_list(), axis = 0) 
@@ -846,19 +929,24 @@ def main():
     # create a dataset for validation the train
     X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, random_state=seed_value)
 
-    model_logistic_regression = Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value)
-    print('#'*50 + '\n')
+    # if change the seed_value or want change th params of grid remove the comments below 
+    # and put in comments the function model_already_calculed under
+
+    # model_logistic_regression = Logistic_Regression(X_train, X_valid, y_train, y_valid, seed_value)
+    # print('#'*50 + '\n')
     ccp_alfa = cost_pruning_tree(X_train, X_valid, y_train, y_valid, seed_value)
-    model_decision_tree = Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)    
-    print('#'*50 + '\n')
-    model_random_forest = Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)
-    print('#'*50 + '\n')
-    model_xgboost = XGBoost(X_train, X_valid, y_train, y_valid, seed_value)
-    print('#'*50 + '\n')
-    model_svc = SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value)
-    print('#'*50 + '\n')
-    model_knn = KNN(X_train, X_valid, y_train, y_valid)
-    print('#'*50 + '\n')
+    # model_decision_tree = Decision_Tree(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)    
+    # print('#'*50 + '\n')
+    # model_random_forest = Random_Forest(X_train, X_valid, y_train, y_valid, ccp_alfa, seed_value)
+    # print('#'*50 + '\n')
+    # model_xgboost = XGBoost(X_train, X_valid, y_train, y_valid, seed_value)
+    # print('#'*50 + '\n')
+    # model_svc = SVM_SVC(X_train, X_valid, y_train, y_valid, seed_value)
+    # print('#'*50 + '\n')
+    # model_knn = KNN(X_train, X_valid, y_train, y_valid)
+    # print('#'*50 + '\n')
+
+    model_logistic_regression, model_decision_tree, model_random_forest, model_xgboost, model_svc, model_knn = model_already_calculed(X_train, y_train, ccp_alfa, seed_value)
 
     names_list = ['lr', 'rf', 'xgb', 'svc', 'knn']
     model_list = [model_logistic_regression, model_random_forest, model_xgboost, model_svc, model_knn]
@@ -866,11 +954,325 @@ def main():
     
     prediction_scoring(model_voting, X_valid, y_valid, cv_value=5)
     print('-'*50)
+
+    model = choose_model(model_list, X_valid, y_valid)
     
-    result(X_test, model_voting)
+    result(X_test, model)
 
 # if __name__ == "__main__":
 #     main()
+
+################################################################################################################################################################################
+################################################################################################################################################################################
+
+def identify_importance_columns(model, X_train, col_train):
+    
+    # return as dataframe
+    df = pd.DataFrame(X_train, columns=col_train)
+    
+    # identify the most important columns in tunned model
+    df = pd.DataFrame({'feature':df.columns,
+                                'importance':np.round(model.feature_importances_,3)})\
+                     .sort_values('importance',ascending=False)\
+                     .set_index('feature')
+    print('\nImportance of columns in model')
+    print(df)
+    print('\n'+ '-'*50 + '\n')
+
+def fine_ajust_threshold(model, X_valid, y_valid):
+
+    # getting the probabilities of our predictions
+    y_prob = model.predict_proba(X_valid)
+    y_prob = y_prob[:,1]
+
+    # plotting precision x recall
+    print('Find the best threshold')
+    precision, recall, threshold = precision_recall_curve(y_valid, y_prob)
+    plt.figure(figsize=(14, 7))
+    plt.plot(threshold, precision[:-1], "r-", label="precision", linewidth=5)
+    plt.plot(threshold, recall[:-1], "b", label="recall", linewidth=5)
+    plt.xlabel("threshold", fontsize=19)
+    plt.legend(loc="upper right", fontsize=19)
+    plt.ylim([0, 1.1])
+    plt.show()
+
+    # calculate the best threshold
+    thresholds = np.arange(0, 1.05, 0.01)
+    best_threshold = 0.5
+    best_f1 = 0
+
+    for threshold in thresholds:
+        y_pred = (y_prob >= threshold).astype(int)
+        f1 = f1_score(y_valid, y_pred)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = threshold
+
+    y_pred = (y_prob >= best_threshold).astype(int)
+
+    print('For the best threshold:')
+    print("Threshold:", round(best_threshold,2))
+    print("Accuracy: {0:.2f}%".format(accuracy_score(y_valid, y_pred)*100))
+    print("Precision: {0:.2f}%".format(precision_score(y_valid, y_pred)*100))
+    print("Recall: {0:.2f}%".format(recall_score(y_valid, y_pred)*100))
+    print("F1 Score: {0:.2f}%".format(f1_score(y_valid, y_pred)*100))
+
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores = []
+
+    for threshold in thresholds:
+        y_pred = (y_prob >= threshold).astype(int)
+        accuracies.append(accuracy_score(y_valid, y_pred))
+        precisions.append(precision_score(y_valid, y_pred))
+        recalls.append(recall_score(y_valid, y_pred))
+        f1_scores.append(f1_score(y_valid, y_pred))
+
+    print('\nWith the curves:')
+    plt.plot(thresholds, accuracies, label="Accuracy")
+    plt.plot(thresholds, precisions, label="Precision")
+    plt.plot(thresholds, recalls, label="Recall")
+    plt.plot(thresholds, f1_scores, label="F1 Score")
+    plt.xlabel("Threshold")
+    plt.ylabel("Score")
+    plt.legend()
+    plt.show()
+
+def roc_curve_valid(model, X_valid, y_valid):
+
+    print('\n' + '-'*50 + '\n')
+    print('ROC Curve')
+
+    # getting the probabilities of our predictions
+    y_prob = model.predict_proba(X_valid)
+    y_prob = y_prob[:,1]
+
+    # compute true positive rate and false positive rate
+    false_positive_rate, true_positive_rate, thresholds = roc_curve(y_valid, y_prob)
+
+    plt.figure(figsize=(14, 7))
+    plt.plot(false_positive_rate, true_positive_rate, linewidth=2, label=None)
+    plt.plot([0, 1], [0, 1], 'r', linewidth=4)
+    plt.axis([0, 1, 0, 1])
+    plt.xlabel('False Positive Rate (FPR)', fontsize=16)
+    plt.ylabel('True Positive Rate (TPR)', fontsize=16)
+    plt.show()
+
+    r_a_score = roc_auc_score(y_valid, y_prob)
+    print("ROC-AUC-Score:", r_a_score)
+    print('\n' + '-'*50)
+
+def exploring_Random_Forest():
+
+    # Seed
+    seed_value = 0
+
+    # imagem of Titanic Deck Plan
+    # https://images.liverpoolmuseums.org.uk/2020-01/titanic-deck-plan-for-titanic-resource-pack-pdf.pdf
+    # https://www.encyclopedia-titanica.org/titanic-deckplans/
+
+    # get the dataset for train and test
+    train = pd.read_csv('train.csv')
+    test = pd.read_csv('test.csv')
+
+    # define PassengerId like index
+    train = train.set_index('PassengerId', drop=True)
+    test = test.set_index('PassengerId', drop=True)
+
+    df = pd.concat([train, test])
+
+    print(df.head())
+    print('\n' + '-'*50)
+    # Categorical: Survived, Sex, and Embarked
+    # Ordinal: Pclass
+    # Continous: Age, Fare
+    # Discrete: SibSp, Parch
+
+    data_info(train, test, df)
+
+    # working with missing values
+
+    # i'll works in Age, Fare Embarked with KNNImputer after all
+
+    # checked whether the person stayed in the cabin and which ones
+    df['InCabin'] = df['Cabin'].apply(lambda x: 0 if pd.isnull(x) else 1)
+    df['Deck'] = df['Cabin'].str[:1]
+    df.loc[pd.isnull(df.Deck), 'Deck'] = 'N/D'
+    
+    # getting the surname and title
+    df[['Surname','Title']] = [i.split(',') for i in df['Name'].values]
+    
+    df.Surname = df.Surname.str.strip()
+    # case the surname in train doesnt in test will receved Others
+    df.loc[~df.Surname.isin(df.loc[pd.isnull(df.Survived), 'Surname']
+                              .to_list()), 'Surname'] = 'Others'
+
+    df.Title = [i.strip().split('.')[0] for i in df.Title.values]
+    
+    # for understand the relation of title
+    for t in df.Title.unique():
+        print(f'{t}: {df[df.Title == t].shape[0]}, {df[df.Title == t].Sex.unique()}')
+    print('\n' + '-'*50 + '\n')
+    df.loc[(df.Title == 'Mme') | (df.Title == 'Ms'), 'Title'] = 'Mrs'
+    df.loc[(df.Title != 'Mr') & (df.Title != 'Mrs') & (df.Title != 'Miss'), 'Title'] = 'Others'
+
+    # case the title in train doesnt in test will receved Others
+    df.loc[~df.Title.isin(df.loc[pd.isnull(df.Survived), 
+                                 'Title']
+                            .to_list()), 'Title'] = 'Others'
+
+    # another parameters based in Age and Relationships
+    df['Children'] = df.Age.apply(lambda x: 1 if x<18 else 0)
+    df['Aged'] = df.Age.apply(lambda x: 1 if x>65 else 0)
+    df['Alone'] = df.apply(lambda x: 1 if (x.Parch == 0) & (x.SibSp == 0) else 0, axis=1)
+
+    # see the distribution of data by survived
+    # data_visualization(df)
+
+    # separate the columns labels and targets
+    # the PassengerId, Name and Ticket columns were ignored because 
+    # they were interpreted as not necessary for training the model
+    X_train = df.drop(columns=['Survived', 'Name', 'Ticket', 'Cabin']).copy()
+    y_train = df[['Survived']].copy()
+
+    category_columns = ['Sex', 'Embarked', 'Deck', 'Surname', 'Title']
+
+    # fill np.nan values with technique KNN Imputer
+    X_train = fill_null_values(X_train, category_columns)
+
+    # # separate the category columns in multiples columns
+    # X_train = segregate_category(X_train, category_columns)
+    le_cat_col = []
+    for cat_col in category_columns:
+        le = LabelEncoder()
+        X_train[cat_col] = le.fit_transform(X_train[cat_col])
+        le_cat_col.append((le,cat_col))
+
+    # defined the test dataset
+    X_test = X_train.drop(train.index.to_list(), axis = 0)
+
+    # remove outliers from columns
+    # as seen in the data visualization stage, the 'Age' and 'Fare' columns 
+    # presented outliers that could harm the model
+    X_train, y_train = drop_outliers(X_train, y_train, ['Age', 'Fare'])
+
+    # identify the test index
+    idx_test = y_train[pd.isnull(y_train.Survived)].index
+
+    # as only the distribution of 'Age' and 'Fare' is 'Gaussian", they will be scaled by StandardScaler
+    # the other columns will be applied to MinMaxScaler method
+    min_max_col = ['Pclass', 'SibSp', 'Parch']
+    std_scal_col = ['Age', 'Fare']
+    # invert the values of Pclass because the 1 are better than 3
+    X_train['Pclass'] = X_train['Pclass'].rank(method='dense', ascending=False)
+    mms = MinMaxScaler()
+    ss = StandardScaler()
+    X_train[min_max_col] = mms.fit_transform(X_train[min_max_col])
+    X_train[std_scal_col] = ss.fit_transform(X_train[std_scal_col])
+    X_test[min_max_col] = mms.transform(X_test[min_max_col])
+    X_test[std_scal_col] = ss.transform(X_test[std_scal_col])
+    
+    # remove the index of test for training model
+    X_train = X_train.drop(idx_test.to_list(), axis = 0) 
+    y_train = y_train.drop(idx_test.to_list(), axis = 0) 
+    
+    # define the columns for recreate the dataset
+    col_train = X_train.columns
+    
+    # # ML models works better with numpy array
+    X_train, y_train = X_train.to_numpy(), y_train.to_numpy().ravel()
+
+    # create a dataset for validation the train
+    X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, random_state=seed_value)
+
+    ccp_alfa = cost_pruning_tree(X_train, X_valid, y_train, y_valid, seed_value)
+    
+    # define the model to use and training the model
+    rfc = RandomForestClassifier(random_state=seed_value)
+    rfc.fit(X_train, y_train)
+
+    # find the score of model based in validation data
+    acc_free = rfc.score(X_valid, y_valid)
+    print("Random Forest Free Accuracy: {0:.2f}%".format(acc_free*100))
+    print(f'Confusion Matrix:\n{confusion_matrix(y_valid, rfc.predict(X_valid))}\n')
+    print('-'*50)
+
+    identify_importance_columns(rfc, X_train, col_train)
+
+    fine_ajust_threshold(rfc, X_valid, y_valid)
+
+    roc_curve_valid(rfc, X_valid, y_valid)
+
+    print('\nTime to tunning the tree!!!\n')
+    # Tunning the Tree
+
+    # define grid 
+    grid = { 
+        'n_estimators': [1, 10, 50, 100, 250, 500, 1000],
+        'criterion': ['gini', 'entropy', 'log_loss', 'mse'],
+        'max_features': ['sqrt','log2'],
+        'max_depth': [4, 5, 6, 8, 10, 12],
+        'min_samples_leaf' : [1, 5, 10, 25, 50, 70], 
+        'min_samples_split' : [2, 4, 10, 12, 16, 18, 25, 35],
+        'random_state': [seed_value],
+        'ccp_alpha': [ccp_alfa]
+    }
+
+    best_acc_tunned = 0
+    best_scoring = ''
+    best_cv = 0
+    for s in ['roc_auc', 'accuracy']:
+        for i in range(3,6):
+            grid_search = GridSearchCV(rfc,
+                                       grid, 
+                                       cv=i,
+                                       scoring=s,
+                                       verbose=1,
+                                       n_jobs=-1)
+            
+            grid_search.fit(X_train, y_train)
+
+            # best params from the grid
+            best_params = grid_search.best_params_
+
+            # training the tunning tree
+            rfc_tunned = RandomForestClassifier(**best_params)
+            rfc_tunned.fit(X_train, y_train)
+
+            # find the score of tunned model based in validation data
+            acc_tunned = rfc_tunned.score(X_valid, y_valid)
+
+            if acc_tunned > best_acc_tunned:
+                best_acc_tunned = acc_tunned
+                best_params_all = best_params
+                best_scoring = s
+                best_cv = i
+
+    # show the best values
+    print('\nBest Params for Random Forest Classifier')
+    for param, value in best_params_all.items():
+        print(f"{param}: {value}")
+    print(f'cv: {best_cv}')
+    print(f'scoring: {best_scoring}')
+
+    # training the tunning tree
+    rfc_tunned = RandomForestClassifier(**best_params_all)
+    rfc_tunned.fit(X_train, y_train)
+
+    # find the score of tunned model based in validation data
+    acc_tunned = rfc_tunned.score(X_valid, y_valid)
+    print("\nRandom Forest Tunned Accuracy: {0:.2f}%".format(acc_tunned*100))
+    print(f'Confusion Matrix:\n{confusion_matrix(y_valid, rfc_tunned.predict(X_valid))}\n')
+    print('-'*50+'\n')
+
+    identify_importance_columns(rfc_tunned, X_train, col_train)
+
+    fine_ajust_threshold(rfc_tunned, X_valid, y_valid)
+
+    roc_curve_valid(rfc_tunned, X_valid, y_valid)
+
+# exploring_Random_Forest()
 
 ################################################################################################################################################################################
 ################################################################################################################################################################################
@@ -1030,3 +1432,11 @@ def main():
 # # Final Result
 
 # Voting Accuracy: 73.684%
+
+################################################################################################################################################################################
+################################################################################################################################################################################
+################################################################################################################################################################################
+################################################################################################################################################################################
+################################################################################################################################################################################
+################################################################################################################################################################################
+
